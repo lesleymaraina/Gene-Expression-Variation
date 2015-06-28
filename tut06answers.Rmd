@@ -1,0 +1,117 @@
+---
+title: 'Tutorial 6: REDUCE'
+author: "Harmen Bussemaker and Vincent FitzPatrick"
+date: "Saturday, June 27, 2015"
+output: html_document
+---
+
+# REDUCE: Identifying sequence drivers of gene expression with linear modeling
+
+In this part of the assignment, we will use all genes in `alpha`, not just the high-variance genes.
+
+1) Load "alpha.rda" and "hexamerCounts.RData". Find the `universe` of ORFs that are shared between `alpha` and `hexamerCounts`. How many are there? Then filter both matrices to include only these genes.
+```{r}
+load("alpha.rda")
+load("hexamerCounts.RData")
+universe = intersect(rownames(alpha),rownames(hexamerCounts))
+
+alpha = alpha[universe,]
+hexamerCounts = hexamerCounts[universe,]
+```
+
+****
+
+2) Consider the motif ACGCGT. It is bound by the Mbp1-Swi6 heterodimeric transcription factor complex, which play a major role at the G1/S transition of the cell cycle. The complex reaches its maximum regulatory activity at 14 minutes. 
+#> Make a scatter plot where each point is a gene
+#> y-axis is the expression logratio at 14 minutes
+#> x-axis is the count of ACGCGT in the promoter of the gene
+#Describe what you see. 
+
+```{r}
+plot(hexamerCounts[,"ACGCGT"],alpha[,"alpha14"])
+```
+
+**There appears to be a positive correlation between hexamer count and alpha14 expression levels.**
+
+****
+
+3) Make a `boxplot()` showing the same data. What extra information does a boxplot tell you? 
+```{r}
+boxplot(alpha[,"alpha14"] ~ hexamerCounts[,"ACGCGT"])
+```
+
+
+4) Use `cor.test` to compute the Pearson correlation between the two variables. What is the value of this correlation? Is it positive or negative? Is the correlation significant?
+```{r}
+test = cor.test(hexamerCounts[,"ACGCGT"], alpha[,"alpha14"])
+test$estimate #Pearson correlation, positive
+test$p.value #p-value, highly significant
+```
+
+****
+
+5) Now use `cor` instead of `cor.test` to compute the same correlation coefficient (hint: you can change how missing values are dealt with using the `use` option; see documentation for `cor`). Do you get exactly the same value as with `cor.test`?
+```{r}
+cor(hexamerCounts[,"ACGCGT"],alpha[,"alpha14"],use = "pairwise.complete.obs") 
+```
+**`pairwise.complete.obs` includes pairs of values for which neither array has NA. It gives the same value.**
+
+****
+
+6) Next, perform a linear regression of the expression log-ratio on the motif count for the same data using `lm(logratio ~ count)`. Store the result in a variable named `fit`. You can use `summary(fit)` to get a lot of information about the fit. What is the value of the regression coefficient ("slope")? Is it the same as the Pearson correlation?
+```{r}
+fit = lm(alpha[,"alpha14"] ~ hexamerCounts[,"ACGCGT"])
+summary(fit)
+
+fit$coefficients[2]
+test$estimate
+```
+
+**The values are not the same, but they do have the same sign.**
+
+****
+
+7) An exact relationship $\beta = (\sigma_y/\sigma_x)r$ holds between the slope $\beta$ and the Pearson correlation coefficient $r$; here $\sigma_x$ and $\sigma_y$ are the standard deviation of the independent and dependent variable, respectively. Check explicitly that this relationship also hold for the present data.
+```{r}
+test$estimate*sd(alpha[,"alpha14"],na.rm = T)/sd(hexamerCounts[,"ACGCGT"])
+test$estimate*sd(alpha[,"alpha14"],na.rm = T)/sd(hexamerCounts[!is.na(alpha[,"alpha14"]),"ACGCGT"])
+```
+
+**When you used `lm()` above, genes containing NAs in the independent variable were automatically removed from the dependent variable. To get the same result we must remove the values of hexamerCounts which correspond to NAs in alpha14, just as `cor(..., use = "complete.obs")` and `lm()` did.**
+
+****
+
+8) We are now going to infer the protein-level (differential) activity of Mbp1/Swi6 over the time course. To this end, use `cor()` to compute the Pearson correlation between the logratios at each time point and the count for ACGCGT (hint: you might want to use "pairwise.complete.obs"). Plot this correlation as a function of time, and add a horizontal line at cor = 0. What do you observe?
+```{r}
+cors = cor(alpha, hexamerCounts[,"ACGCGT"],use = "pairwise.complete.obs")
+plot(seq(0,119,7),cors,type="b",col="red")
+abline(h=0)
+```
+
+**The correlation between expression and hexamer count oscilates between negative and positive over the course of the cell cycle. This suggests that this hexamer acts as a binding site for a factor or factors that induce expression at some points and repress expression at others.**
+
+****
+
+9) Finally, you are going to do some motif discovery a la REDUCE (Bussemaker *et al.*, 2001; <http://www.ncbi.nlm.nih.gov/pubmed/9843569>). For the 14 minute expression profile, determine which hexamer has the strongest positive correlation with the expression log-ratios at 14min. Which motif is this? List the 10 top motifs. Do you see relationships between the top 10 motifs?
+```{r}
+cors2 = cor(hexamerCounts,use = "pairwise.complete.obs",alpha[,"alpha14"])
+colnames(hexamerCounts)[which.max(cors2)]
+colnames(hexamerCounts)[order(cors2,decreasing = T)][1:10]
+```
+
+**Sevaral of the motifs apper to be overlapping patterns of the first hexamer (ACGCGT, gACGCG, GCGTag).**
+
+****
+
+10) Which motif shown the strongest *negative* correlation with the same expression data? Make a plot for the inferred activity of this motif as a function of time, and add to it the result for ACGCGT obtained above, using a different color. Add a legend to the plot that defines which motif is used for each line.
+
+```{r}
+colnames(hexamerCounts)[which.min(cors2)]
+
+cors3 = cor(alpha,hexamerCounts[,"GATGAG"],use = "complete.obs")
+
+plot(seq(0,119,7),cors,type="b",col="red")
+points(seq(0,119,7),cors3,type="b",col="blue")
+legend("topright",legend = c("ACGCGT","GATGAG"),lwd=1,col=c("red","blue"))
+abline(h=0)
+```
